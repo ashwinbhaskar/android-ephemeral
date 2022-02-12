@@ -1,21 +1,15 @@
 package com.ephemeral
 
 import arrow.core.*
-import arrow.core.Either.*
-import java.lang.Exception
 import java.time.Duration
-import java.time.LocalDateTime
 import kotlin.reflect.KClass
-import kotlin.reflect.cast
 
-object inmemory {
+object InMemory {
 
     private val store: MutableMap<String, common.Value<*>> = mutableMapOf()
 
     fun <T>put(key: String, value: T, expireAfter: Duration) {
-        val now = LocalDateTime.now()
-        val expiryDateTime = now.plusNanos(expireAfter.toNanos())
-        store[key] = common.Value(value, expiryDateTime)
+        store[key] = common.Value(value, common.expiry(expireAfter))
     }
 
     fun <T: Any>get(key: String, clazz: KClass<T>): Either<CastError, Option<T>> {
@@ -32,9 +26,7 @@ object inmemory {
     fun <T: Any>getAndUpdateExpiryIfPresent(key: String, expireAfter: Duration, clazz: KClass<T>): Either<CastError, Option<T>> {
         return when(val result = store.computeIfPresent(key) { _, value ->
             value.copy(
-                expiry = value.expiry.plusNanos(
-                    expireAfter.toNanos()
-                )
+                expiry = common.expiry(expireAfter)
             )
         }.toOption()) {
             is None -> None.right()
@@ -42,13 +34,17 @@ object inmemory {
         }
     }
 
-    fun <T>updateValueIfPresent(key: String, newValue: T): Boolean {
+    @Synchronized
+    fun <T: Any>updateValueIfPresent(key: String, updateFunc: (T) -> T, clazz: KClass<T>): Either<CastError, Boolean> {
         return when(val result = store[key].toOption()) {
-            is None -> false
-            is Some -> {
-                store[key] = common.Value(newValue, result.value.expiry)
-                true
-            }
+            is None -> false.right()
+            is Some -> common.tryCast(result.value, clazz)
+                .map { maybeValue ->
+                    maybeValue.fold({false}, {value ->
+                        store[key] = common.Value(updateFunc(value), result.value.expiry)
+                        true
+                    })
+                }
         }
     }
 

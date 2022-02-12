@@ -18,8 +18,6 @@ internal object common {
 
     data class Value<T>(val v: T, val expiry: LocalDateTime)
 
-    data class PersistedValue<T>(val v: T, val expiry: LocalDateTime)
-
     fun now(): LocalDateTime = LocalDateTime.now()
 
     private val dateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME

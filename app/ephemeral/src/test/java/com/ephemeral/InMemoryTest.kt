@@ -1,5 +1,6 @@
 package com.ephemeral
 
+import arrow.core.Either
 import arrow.core.None
 import arrow.core.Some
 import org.junit.Test
@@ -15,8 +16,8 @@ class InMemoryTest {
         val duration = Duration.ofMinutes(5)
 
         val sc = SomeClass(1, "foox", true)
-        inmemory.put(key = "foo", value = sc, expireAfter = duration)
-        when(val result = inmemory.get("foo", SomeClass::class).unsafe()) {
+        InMemory.put(key = "foo", value = sc, expireAfter = duration)
+        when(val result = InMemory.get("foo", SomeClass::class).unsafe()) {
             is None -> Assert.fail("Result should not be empty")
             is Some -> assert(result.value == sc)
         }
@@ -27,16 +28,16 @@ class InMemoryTest {
         val twoSeconds = Duration.ofSeconds(2L)
         val mc = MyClass("bax", 1.1f)
 
-        inmemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
+        InMemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
 
-        when(val result = inmemory.get("zoox", MyClass::class).unsafe()) {
+        when(val result = InMemory.get("zoox", MyClass::class).unsafe()) {
             is None -> Assert.fail("Result should not be empty")
             is Some -> assert(result.value == mc)
         }
 
         Thread.sleep(2001)
 
-        when(inmemory.get("zoox", MyClass::class).unsafe()) {
+        when(InMemory.get("zoox", MyClass::class).unsafe()) {
             is None -> assert(true)
             is Some -> Assert.fail("Result should be empty as it has expired")
         }
@@ -45,8 +46,8 @@ class InMemoryTest {
     @Test
     fun `should return a cast error when trying to get a wrong type`() {
         val sc = SomeClass(5, "sheesh", false)
-        inmemory.put(key = "dune", value = sc, expireAfter = Duration.ofSeconds(5))
-        val result = inmemory.get("dune", MyClass::class)
+        InMemory.put(key = "dune", value = sc, expireAfter = Duration.ofSeconds(5))
+        val result = InMemory.get("dune", MyClass::class)
         assert(result.isLeft())
     }
 
@@ -54,9 +55,9 @@ class InMemoryTest {
     fun `should be able to put and get primitives`() {
         val duration = Duration.ofMinutes(5)
 
-        inmemory.put("arrakis", true, duration)
+        InMemory.put("arrakis", true, duration)
 
-        val result = inmemory.get("arrakis", Boolean::class)
+        val result = InMemory.get("arrakis", Boolean::class)
 
         assert(result.isRight())
     }
@@ -66,20 +67,27 @@ class InMemoryTest {
         val twoSeconds = Duration.ofSeconds(2L)
         val mc = MyClass("bax", 1.1f)
 
-        inmemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
+        InMemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
 
 
-        when(val result = inmemory.getAndUpdateExpiryIfPresent("zoox", Duration.ofSeconds(5), MyClass::class).unsafe()) {
+        when(val result = InMemory.getAndUpdateExpiryIfPresent("zoox", Duration.ofSeconds(5), MyClass::class).unsafe()) {
             is None -> Assert.fail("Result should not be empty")
             is Some -> assert(result.value == mc)
         }
 
         Thread.sleep(3000)
 
-        when(val result = inmemory.get("zoox", MyClass::class).unsafe()) {
+        when(val result = InMemory.get("zoox", MyClass::class).unsafe()) {
             is None -> Assert.fail("Result should not be empty as the expiry is updated")
             is Some -> assert(result.value == mc)
         }
+
+        Thread.sleep(2001)
+
+        val result = InMemory.get("zoox", MyClass::class).unsafe()
+
+        assert(result.isEmpty())
+
     }
 
     @Test
@@ -87,20 +95,21 @@ class InMemoryTest {
         val twoSeconds = Duration.ofSeconds(2L)
         val mc = MyClass("bax", 1.1f)
 
-        inmemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
+        InMemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
 
-        val didUpdate = inmemory.updateValueIfPresent(key = "zoox", newValue = SomeClass(1, "foo", true))
+        val didUpdate = InMemory.updateValueIfPresent(key = "zoox", updateFunc = {it.copy(a = "bax2")}, MyClass::class)
 
-        assert(didUpdate)
+        assert(didUpdate.isRight())
+        Assert.assertEquals(Either.Right(true), didUpdate)
 
-        when(val result = inmemory.get(key = "zoox", SomeClass::class).unsafe()) {
+        when(val result = InMemory.get(key = "zoox", MyClass::class).unsafe()) {
             is None -> Assert.fail("Result should not be empty")
-            is Some -> assert(result.value == SomeClass(1, "foo", true))
+            is Some -> assert(result.value == MyClass("bax2", 1.1f))
         }
 
         Thread.sleep(2001)
 
-        val result = inmemory.get(key = "zoox", SomeClass::class).unsafe()
+        val result = InMemory.get(key = "zoox", SomeClass::class).unsafe()
 
         assert(result.isEmpty())
 
@@ -111,12 +120,12 @@ class InMemoryTest {
         val twoSeconds = Duration.ofSeconds(2L)
         val mc = MyClass("bax", 1.1f)
 
-        inmemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
+        InMemory.put(key = "zoox", value = mc, expireAfter = twoSeconds)
 
-        val isRemoved = inmemory.remove("zoox")
+        val isRemoved = InMemory.remove("zoox")
         assert(isRemoved)
 
-        val isRemovedAgain = inmemory.remove("zoox")
+        val isRemovedAgain = InMemory.remove("zoox")
         assert(isRemovedAgain.not())
     }
 }
