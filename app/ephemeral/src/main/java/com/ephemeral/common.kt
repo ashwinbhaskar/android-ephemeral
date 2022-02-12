@@ -1,13 +1,18 @@
 package com.ephemeral
 
+import arrow.core.*
 import com.google.gson.*
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonWriter
+import java.lang.ClassCastException
+import java.lang.Exception
 import java.lang.reflect.Type
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.reflect.KClass
+import kotlin.reflect.cast
 
 internal object common {
 
@@ -43,6 +48,20 @@ internal object common {
 
     fun hasExpired(expiry: LocalDateTime): Boolean =
         now().isAfter(expiry)
+
+    fun <T: Any>tryCast(value: common.Value<*>, clazz: KClass<T>): Either<CastError, Option<T>> =
+        try {
+            clazz.cast(value.v).some().right()
+        } catch (e: ClassCastException) {
+            CastError(e.message ?: "").left()
+        }
 }
 
 data class CastError(val msg: String)
+
+fun <T>Either<CastError, Option<T>>.unsafe(): Option<T> {
+    return when(this) {
+        is Either.Left -> throw ClassCastException(this.value.msg)
+        is Either.Right -> this.value
+    }
+}
