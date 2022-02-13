@@ -1,11 +1,11 @@
 # android-ephemeral
 
-This is a small library to help you store ephemeral values which can be either persistable or in memory. To persist the values the library uses shared preferences.
+A super lightweight library to help you store/retrieve ephemeral values which can be either persisted (in shared preferences) or put in memory.
 
 ## Dependency
 In your build.gradle file add the following in dependencies
 ```
-implementation 'io.github.ashwinbhaskar:ephemeral-android:0.1.0'
+implementation 'io.github.ashwinbhaskar:ephemeral-android:1.0.0'
 ```
 
 ## Usage
@@ -44,3 +44,31 @@ val maybeValue: Option<SomeClass> = InMemory.getAndUpdateExpiryIfPresent("foo-ke
 val isRemoved: Boolean = InMemory.remove("foo-key")
 
 ```
+
+### In Shared Preferences
+
+This is a wrapper around android shared preference methods with an extra field - `expireAfter`.
+
+```kotlin
+import java.time.*
+import com.ephemeral.*
+import com.ephemeral.Extensions.*
+
+//Put a value in shared preferences which gets deleted after 5 seconds
+Persisted.putString("some-key", "this is a the value", Duration.ofSeconds(5), applicationContext)
+
+//If you do not want to pass applicationContext again and again you can you use the extension functions on Context that is imported above
+context.putEphemeralString("some-key", "this is a the value", Duration.ofSeconds(5))
+
+val defaultValue = ""
+
+val value = context.getEphemeralString("some-key", defaultValue)
+when(value) {
+    defaultValue -> //The value has either expired or was never there
+    else -> // do something with the value
+}
+
+//Similarly you can use methods for Boolean, Int, Long, Float, Set<String>
+```
+
+
