@@ -1,10 +1,7 @@
 package com.ephemeral
 
 import android.content.Context
-import arrow.core.Either
-import arrow.core.None
-import arrow.core.Option
-import arrow.core.right
+import arrow.core.*
 import java.time.Duration
 import java.time.LocalDateTime
 import kotlin.reflect.KClass
@@ -18,14 +15,29 @@ object Persisted {
         prefs(context).edit().remove(key).apply()
     }
 
-    private fun <T> put(key: String, value: T, expiry: LocalDateTime, context: Context) {
+    private fun <T : Any> put(
+        key: String,
+        value: T,
+        expiry: LocalDateTime,
+        clazz: KClass<T>,
+        context: Context
+    ) {
         val v = common.Value(value, expiry)
-        val json = common.gson.toJson(v)
-        prefs(context).edit().putString(key, json).apply()
+        val json = common.serialize(v, clazz)
+        prefs(context)
+            .edit()
+            .putString(key, json)
+            .apply()
     }
 
-    fun <T> put(key: String, value: T, expireAfter: Duration, context: Context) {
-        put(key, value, common.expiry(expireAfter), context)
+    fun <T : Any> put(
+        key: String,
+        value: T,
+        expireAfter: Duration,
+        clazz: KClass<T>,
+        context: Context
+    ) {
+        put(key, value, common.expiry(expireAfter), clazz, context)
     }
 
     fun <T : Any> get(
@@ -33,16 +45,19 @@ object Persisted {
         clazz: KClass<T>,
         context: Context
     ): Either<CastError, Option<T>> {
-        return when (val s = prefs(context).getString(key, "")) {
+        return when (val jsonStr = prefs(context).getString(key, "")) {
             "", null -> None.right()
             else -> {
-                val value = common.gson.fromJson(s, common.Value::class.java)
-                if (common.hasExpired(value.expiry)) {
-                    removeKey(key, context)
-                    None.right()
-                } else {
-                    common.tryCast(value, clazz)
-                }
+                common
+                    .deserialize(jsonStr, clazz)
+                    .map { value ->
+                        if (common.hasExpired(value.expiry)) {
+                            removeKey(key, context)
+                            None
+                        } else {
+                            value.v.some()
+                        }
+                    }
             }
         }
     }
@@ -56,7 +71,7 @@ object Persisted {
     ): Either<CastError, Option<T>> {
         return get(key, clazz, context).map { maybeValue ->
             maybeValue.map { value ->
-                put(key, value, newExpireAfter, context)
+                put(key, value, newExpireAfter, clazz, context)
                 value
             }
         }
@@ -73,23 +88,21 @@ object Persisted {
         return when (val s = prefs(context).getString(key, "")) {
             "", null -> false.right()
             else -> {
-                val value = common.gson.fromJson(s, common.Value::class.java)
-                if (common.hasExpired(value.expiry)) {
-                    removeKey(key, context)
-                    false.right()
-                } else {
-                    val expiry = value.expiry
-                    common
-                        .tryCast(value, clazz)
-                        .map { maybeValue ->
-                            maybeValue.fold({ false }, { value ->
-                                val newValue = updateFunc(value)
-                                put(key, newValue, expiry, context)
-                                true
-                            })
+                common
+                    .deserialize(s, clazz)
+                    .map { value ->
+                        if (common.hasExpired(value.expiry)) {
+                            removeKey(key, context)
+                            false
+                        } else {
+                            val newV = updateFunc(value.v)
+                            put(key, newV, value.expiry, clazz, context)
+                            true
                         }
-                }
+                    }
+
             }
         }
     }
+
 }
