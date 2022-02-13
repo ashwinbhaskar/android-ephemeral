@@ -36,3 +36,10 @@ fun <T : Any> Context.updateValueIfPresent(
 ): Either<CastError, Boolean> {
     return Persisted.updateValueIfPresent(key, updateFunc, clazz, this)
 }
+
+fun <T : Any> Context.get(
+    key: String,
+    clazz: KClass<T>
+): Either<CastError, Option<T>> {
+    return Persisted.get(key, clazz, this)
+}

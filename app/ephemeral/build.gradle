@@ -33,7 +33,7 @@ android {
 
 ext {
     PUBLISH_GROUP_ID = 'io.github.ashwinbhaskar'
-    PUBLISH_VERSION = '0.3.0'
+    PUBLISH_VERSION = '0.4.0'
     PUBLISH_ARTIFACT_ID = 'ephemeral-android'
     PUBLISH_DESCRIPTION = 'Store ephemeral values in memory and disk'
     PUBLISH_URL = 'https://github.com/ashwinbhaskar/android-ephermal'
