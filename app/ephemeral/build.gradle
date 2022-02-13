@@ -33,9 +33,9 @@ android {
 
 ext {
     PUBLISH_GROUP_ID = 'io.github.ashwinbhaskar'
-    PUBLISH_VERSION = '0.4.0'
+    PUBLISH_VERSION = '1.0.0'
     PUBLISH_ARTIFACT_ID = 'ephemeral-android'
-    PUBLISH_DESCRIPTION = 'Store ephemeral values in memory and disk'
+    PUBLISH_DESCRIPTION = 'Store ephemeral values in memory and shared preferences'
     PUBLISH_URL = 'https://github.com/ashwinbhaskar/android-ephermal'
     PUBLISH_LICENSE_NAME = 'MIT License'
     PUBLISH_LICENSE_URL =
@@ -56,9 +56,7 @@ apply from: "${rootProject.projectDir}/scripts/publish-module.gradle"
 
 dependencies {
 
-    implementation 'androidx.core:core-ktx:1.7.0'
     implementation("io.arrow-kt:arrow-core:1.0.1")
-    implementation 'com.google.code.gson:gson:2.8.9'
     testImplementation 'junit:junit:4.+'
     testImplementation 'androidx.test:core:1.2.0'
     androidTestImplementation 'androidx.test.ext:junit:1.1.2'
