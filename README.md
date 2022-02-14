@@ -26,7 +26,7 @@ ImMemory.put(key = "foo-key", value = sc, expireAfter = Duration.ofSeconds(5))
 // Gets the value from memory
 val maybeValueOrError: Either<CastError, Option<SomeClass>> = ImMemory.get("foo-key", SomeClass::class)
 
-//Use unsafe() method if you are confident that SomeClass is the right one
+//Use unsafe() method if you are confident that SomeClass is the right type
 val maybeValue: Option<SomeClass> = InMemory.get("foo-key", SomeClass::class).unsafe()
 
 when(maybeValue) {
@@ -57,7 +57,7 @@ import com.ephemeral.Extensions.*
 //Put a value in shared preferences which gets deleted after 5 seconds
 Persisted.putString("some-key", "this is a the value", Duration.ofSeconds(5), applicationContext)
 
-//If you do not want to pass applicationContext again and again you can you use the extension functions on Context that is imported above
+//If you do not want to pass applicationContext everytime can you use the extension functions on Context that are imported above
 context.putEphemeralString("some-key", "this is a the value", Duration.ofSeconds(5))
 
 val defaultValue = ""
