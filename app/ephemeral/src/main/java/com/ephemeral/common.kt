@@ -1,6 +1,5 @@
 package com.ephemeral
 
-import arrow.core.*
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -30,19 +29,17 @@ internal object common {
     fun hasExpired(expiryStr: String): Boolean =
         hasExpired(LocalDateTime.parse(expiryStr, dateTimeFormatter))
 
-    fun <T: Any>tryCast(value: common.Value<*>, clazz: KClass<T>): Either<CastError, Option<T>> =
-        try {
-            clazz.cast(value.v).some().right()
-        } catch (e: ClassCastException) {
-            CastError(e.message ?: "").left()
+    /**
+     * Casts a stored value to [clazz], or throws a [ClassCastException] whose message
+     * names the key, the stored type and the requested type.
+     */
+    fun <T : Any> cast(key: String, value: Any?, clazz: KClass<T>): T {
+        if (!clazz.isInstance(value)) {
+            throw ClassCastException(
+                "Value stored under key '$key' is of type ${value?.let { it::class.qualifiedName }}, " +
+                    "not ${clazz.qualifiedName}"
+            )
         }
-}
-
-data class CastError(val msg: String)
-
-fun <T>Either<CastError, T>.unsafe(): T {
-    return when(this) {
-        is Either.Left -> throw ClassCastException(this.value.msg)
-        is Either.Right -> this.value
+        return clazz.cast(value)
     }
 }
