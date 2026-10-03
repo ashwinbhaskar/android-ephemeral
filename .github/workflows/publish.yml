@@ -1,0 +1,83 @@
+name: Publish to Maven Central
+
+# Pushing a tag of the form vX.Y.Z publishes the library to Maven Central through Sonatype.
+# The tag must point at a commit on the release branch, and must match PUBLISH_VERSION in
+# app/ephemeral/build.gradle, or the job fails before anything is uploaded.
+#
+# Repository secrets (Settings > Secrets and variables > Actions):
+#   OSSRH_USERNAME    Central Portal user token: username
+#   OSSRH_PASSWORD    Central Portal user token: password
+#   SIGNING_KEY_ID    Last 8 hex characters of the GPG key id
+#   SIGNING_PASSWORD  Passphrase of the GPG key
+#   SIGNING_KEY       ASCII-armoured secret key: gpg --armor --export-secret-keys <key id>
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  RELEASE_BRANCH: master
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure the tag points at a commit on the release branch
+        run: |
+          git fetch --no-tags origin "$RELEASE_BRANCH"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$RELEASE_BRANCH"; then
+            echo "::error::Tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not on $RELEASE_BRANCH. Not publishing."
+            exit 1
+          fi
+
+      - name: Ensure the tag matches PUBLISH_VERSION
+        run: |
+          version=$(sed -nE "s/^[[:space:]]*PUBLISH_VERSION = '([^']+)'.*/\1/p" app/ephemeral/build.gradle)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read PUBLISH_VERSION from app/ephemeral/build.gradle"
+            exit 1
+          fi
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag is $GITHUB_REF_NAME but PUBLISH_VERSION is $version. Bump the version or fix the tag."
+            exit 1
+          fi
+          echo "Publishing version $version"
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-32 build-tools;30.0.2 platform-tools
+
+      # The Gradle wrapper script is not committed, so install the version the wrapper
+      # properties name instead of relying on the runner's preinstalled Gradle.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '7.0.2'
+
+      - name: Run unit tests
+        run: gradle :app:ephemeral:testReleaseUnitTest --no-daemon
+
+      - name: Publish to Sonatype and release to Maven Central
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: gradle publishToSonatype closeAndReleaseSonatypeStagingRepository --no-daemon
