@@ -8,26 +8,33 @@ import kotlin.reflect.cast
 
 internal object common {
 
-    data class Value<out T>(val v: T, val expiry: LocalDateTime)
+    /** Source of the current time in epoch milliseconds. Tests replace it with a fake clock. */
+    @Volatile
+    var nowMillis: () -> Long = { System.currentTimeMillis() }
 
-    private fun now(): LocalDateTime = LocalDateTime.now()
+    /** Minimum gap between two opportunistic purges of expired entries triggered by writes. */
+    const val PURGE_INTERVAL_MILLIS = 1_000L
 
-    private val dateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    /** The instant, in epoch milliseconds, at which a value written now with [expireAfter] expires. */
+    fun expiresAt(expireAfter: Duration): Long {
+        val now = nowMillis()
+        val millis = try {
+            expireAfter.toMillis()
+        } catch (e: ArithmeticException) {
+            Long.MAX_VALUE
+        }
+        return if (millis > Long.MAX_VALUE - now) Long.MAX_VALUE else now + millis
+    }
 
-    fun format(ldt: LocalDateTime): String =
-        dateTimeFormatter.format(ldt)
+    fun hasExpired(expiresAtMillis: Long): Boolean =
+        nowMillis() >= expiresAtMillis
 
-    fun expiry(duration: Duration): LocalDateTime =
-        now().plusNanos(duration.toNanos())
-
-    fun expiryStr(duration: Duration): String =
-        dateTimeFormatter.format(expiry(duration))
-
-    fun hasExpired(expiry: LocalDateTime): Boolean =
-        now().isAfter(expiry)
-
-    fun hasExpired(expiryStr: String): Boolean =
-        hasExpired(LocalDateTime.parse(expiryStr, dateTimeFormatter))
+    /**
+     * Returns true when a purge is due, given the time of the last one. A clock that has moved
+     * backwards also counts as due, so a purge is never postponed indefinitely.
+     */
+    fun purgeDue(lastPurgeAtMillis: Long, nowMillis: Long): Boolean =
+        nowMillis < lastPurgeAtMillis || nowMillis - lastPurgeAtMillis >= PURGE_INTERVAL_MILLIS
 
     /**
      * Casts a stored value to [clazz], or throws a [ClassCastException] whose message
@@ -42,4 +49,19 @@ internal object common {
         }
         return clazz.cast(value)
     }
+
+    // Legacy LocalDateTime-based helpers, still used by Preferences.
+
+    data class Value<out T>(val v: T, val expiry: LocalDateTime)
+
+    private val dateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+
+    fun format(ldt: LocalDateTime): String =
+        dateTimeFormatter.format(ldt)
+
+    fun expiryStr(duration: Duration): String =
+        dateTimeFormatter.format(LocalDateTime.now().plusNanos(duration.toNanos()))
+
+    fun hasExpired(expiryStr: String): Boolean =
+        LocalDateTime.now().isAfter(LocalDateTime.parse(expiryStr, dateTimeFormatter))
 }

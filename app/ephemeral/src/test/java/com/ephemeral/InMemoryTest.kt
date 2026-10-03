@@ -1,16 +1,36 @@
 package com.ephemeral
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Before
 import org.junit.Test
 import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class InMemoryTest {
     private data class SomeClass(val a: Int, val c: String, val b: Boolean)
     private data class MyClass(val a: String, val b: Float)
+
+    private val clock = FakeClock()
+
+    @Before
+    fun setUp() {
+        common.nowMillis = clock::now
+        InMemory.reset()
+    }
+
+    @After
+    fun tearDown() {
+        common.nowMillis = { System.currentTimeMillis() }
+        InMemory.reset()
+    }
 
     @Test
     fun `should be able to put and get values of any type`() {
@@ -31,11 +51,17 @@ class InMemoryTest {
         val mc = MyClass("bax", 1.1f)
         InMemory.put(key = "zoox", value = mc, expireAfter = Duration.ofSeconds(2))
 
+        clock.advance(Duration.ofMillis(1999))
         assertEquals(mc, InMemory.get<MyClass>("zoox"))
 
-        Thread.sleep(2001)
-
+        clock.advance(Duration.ofMillis(1))
         assertNull(InMemory.get<MyClass>("zoox"))
+    }
+
+    @Test
+    fun `a zero duration expires immediately`() {
+        InMemory.put("now", 1, Duration.ZERO)
+        assertNull(InMemory.get<Int>("now"))
     }
 
     @Test
@@ -67,13 +93,22 @@ class InMemoryTest {
 
         assertEquals(mc, InMemory.getAndUpdateExpiryIfPresent<MyClass>("zoox", Duration.ofSeconds(5)))
 
-        Thread.sleep(3000)
-
+        clock.advance(Duration.ofSeconds(3))
         assertEquals(mc, InMemory.get<MyClass>("zoox"))
 
-        Thread.sleep(2001)
-
+        clock.advance(Duration.ofSeconds(2))
         assertNull(InMemory.get<MyClass>("zoox"))
+    }
+
+    @Test
+    fun `getAndUpdateExpiryIfPresent does not revive an expired value`() {
+        InMemory.put(key = "zoox", value = MyClass("bax", 1.1f), expireAfter = Duration.ofSeconds(2))
+
+        clock.advance(Duration.ofHours(1))
+
+        assertNull(InMemory.getAndUpdateExpiryIfPresent<MyClass>("zoox", Duration.ofSeconds(5)))
+        assertNull(InMemory.get<MyClass>("zoox"))
+        assertEquals(0, InMemory.entryCount())
     }
 
     @Test
@@ -86,9 +121,39 @@ class InMemoryTest {
 
         assertFalse(InMemory.updateValueIfPresent<MyClass>("missing") { it })
 
-        Thread.sleep(2001)
-
+        clock.advance(Duration.ofSeconds(2))
         assertNull(InMemory.get<MyClass>("zoox"))
+    }
+
+    @Test
+    fun `updateValueIfPresent keeps the original expiry`() {
+        InMemory.put(key = "zoox", value = 1, expireAfter = Duration.ofSeconds(2))
+
+        clock.advance(Duration.ofSeconds(1))
+        assertTrue(InMemory.updateValueIfPresent<Int>("zoox") { it + 1 })
+
+        clock.advance(Duration.ofSeconds(1))
+        assertNull(InMemory.get<Int>("zoox"))
+    }
+
+    @Test
+    fun `updateValueIfPresent does not update an expired value`() {
+        InMemory.put(key = "zoox", value = MyClass("bax", 1.1f), expireAfter = Duration.ofSeconds(2))
+
+        clock.advance(Duration.ofSeconds(2))
+
+        assertFalse(InMemory.updateValueIfPresent<MyClass>("zoox") { it.copy(a = "bax2") })
+        assertNull(InMemory.get<MyClass>("zoox"))
+        assertEquals(0, InMemory.entryCount())
+    }
+
+    @Test
+    fun `updateValueIfPresent may call back into the store`() {
+        InMemory.put(key = "a", value = 1, expireAfter = Duration.ofMinutes(1))
+        InMemory.put(key = "b", value = 10, expireAfter = Duration.ofMinutes(1))
+
+        assertTrue(InMemory.updateValueIfPresent<Int>("a") { it + InMemory.get<Int>("b")!! })
+        assertEquals(11, InMemory.get<Int>("a"))
     }
 
     @Test
@@ -97,5 +162,101 @@ class InMemoryTest {
 
         assertTrue(InMemory.remove("zoox"))
         assertFalse(InMemory.remove("zoox"))
+    }
+
+    @Test
+    fun `remove reports false for an expired value`() {
+        InMemory.put(key = "zoox", value = 1, expireAfter = Duration.ofSeconds(2))
+        clock.advance(Duration.ofSeconds(2))
+
+        assertFalse(InMemory.remove("zoox"))
+        assertEquals(0, InMemory.entryCount())
+    }
+
+    @Test
+    fun `put sweeps out expired entries that were never read`() {
+        InMemory.put("a", 1, Duration.ofSeconds(1))
+        InMemory.put("b", 2, Duration.ofSeconds(1))
+        InMemory.put("c", 3, Duration.ofMinutes(1))
+        assertEquals(3, InMemory.entryCount())
+
+        clock.advance(Duration.ofSeconds(2))
+        InMemory.put("d", 4, Duration.ofMinutes(1))
+
+        assertEquals(2, InMemory.entryCount())
+        assertEquals(3, InMemory.get<Int>("c"))
+        assertEquals(4, InMemory.get<Int>("d"))
+    }
+
+    @Test
+    fun `put does not sweep more than once per second`() {
+        InMemory.put("a", 1, Duration.ofSeconds(1))
+        clock.advance(Duration.ofSeconds(1))
+        // Same second as the sweep triggered by the first put: no sweep yet.
+        clock.advance(Duration.ofMillis(-1))
+        InMemory.put("b", 2, Duration.ofMinutes(1))
+        assertEquals(2, InMemory.entryCount())
+
+        clock.advance(Duration.ofMillis(1))
+        InMemory.put("c", 3, Duration.ofMinutes(1))
+        assertEquals(2, InMemory.entryCount())
+    }
+
+    @Test
+    fun `purgeExpired drops every expired entry`() {
+        InMemory.put("a", 1, Duration.ofSeconds(1))
+        InMemory.put("b", 2, Duration.ofMinutes(1))
+        clock.advance(Duration.ofSeconds(1))
+
+        InMemory.purgeExpired()
+
+        assertEquals(1, InMemory.entryCount())
+        assertEquals(2, InMemory.get<Int>("b"))
+    }
+
+    @Test
+    fun `concurrent access from many threads does not corrupt the store`() {
+        common.nowMillis = { System.currentTimeMillis() }
+        val threads = 8
+        val iterations = 5_000
+        val keys = (0 until 16).map { "k$it" }
+        val pool = Executors.newFixedThreadPool(threads)
+        val start = CountDownLatch(1)
+        val done = CountDownLatch(threads)
+        val failure = AtomicReference<Throwable>()
+
+        repeat(threads) { t ->
+            pool.execute {
+                try {
+                    start.await()
+                    repeat(iterations) { i ->
+                        val key = keys[(i + t) % keys.size]
+                        when (i % 4) {
+                            0 -> InMemory.put(key, i, Duration.ofMinutes(1))
+                            1 -> InMemory.get<Int>(key)
+                            2 -> InMemory.updateValueIfPresent<Int>(key) { it + 1 }
+                            else -> InMemory.remove(key)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    failure.compareAndSet(null, e)
+                } finally {
+                    done.countDown()
+                }
+            }
+        }
+        start.countDown()
+        assertTrue("workers did not finish", done.await(60, TimeUnit.SECONDS))
+        pool.shutdown()
+
+        failure.get()?.let { throw AssertionError("worker threw", it) }
+        keys.forEach { key -> InMemory.get<Int>(key) }
+    }
+
+    private class FakeClock(private var nowMillis: Long = 1_700_000_000_000L) {
+        fun now(): Long = nowMillis
+        fun advance(by: Duration) {
+            nowMillis += by.toMillis()
+        }
     }
 }
