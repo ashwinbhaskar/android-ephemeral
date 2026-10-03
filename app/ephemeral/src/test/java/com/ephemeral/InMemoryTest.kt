@@ -157,6 +157,48 @@ class InMemoryTest {
     }
 
     @Test
+    fun `getOrPut returns the stored value without computing`() {
+        InMemory.put("k", 1, Duration.ofMinutes(1))
+
+        val value = InMemory.getOrPut<Int>("k", Duration.ofMinutes(1)) { fail("should not compute"); 0 }
+
+        assertEquals(1, value)
+    }
+
+    @Test
+    fun `getOrPut computes and stores a missing value`() {
+        var computations = 0
+
+        val first = InMemory.getOrPut<String>("k", Duration.ofSeconds(2)) { computations++; "computed" }
+        val second = InMemory.getOrPut<String>("k", Duration.ofSeconds(2)) { computations++; "other" }
+
+        assertEquals("computed", first)
+        assertEquals("computed", second)
+        assertEquals(1, computations)
+        assertEquals("computed", InMemory.get<String>("k"))
+    }
+
+    @Test
+    fun `getOrPut recomputes once the value has expired`() {
+        InMemory.getOrPut<String>("k", Duration.ofSeconds(2)) { "first" }
+        clock.advance(Duration.ofSeconds(2))
+
+        assertEquals("second", InMemory.getOrPut<String>("k", Duration.ofSeconds(2)) { "second" })
+        assertEquals("second", InMemory.get<String>("k"))
+    }
+
+    @Test
+    fun `getOrPut throws when the stored value has another type`() {
+        InMemory.put("k", "text", Duration.ofMinutes(1))
+        try {
+            InMemory.getOrPut<Int>("k", Duration.ofMinutes(1)) { 1 }
+            fail("Expected a ClassCastException")
+        } catch (e: ClassCastException) {
+            assertTrue(e.message!!.contains("k"))
+        }
+    }
+
+    @Test
     fun removeTest() {
         InMemory.put(key = "zoox", value = MyClass("bax", 1.1f), expireAfter = Duration.ofSeconds(2))
 

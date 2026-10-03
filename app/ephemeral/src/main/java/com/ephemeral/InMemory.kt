@@ -92,6 +92,41 @@ object InMemory {
     inline fun <reified T : Any> updateValueIfPresent(key: String, noinline updateFunc: (T) -> T): Boolean =
         updateValueIfPresent(key, T::class, updateFunc)
 
+    /**
+     * Returns the live value stored under [key]. If there is none, runs [compute], stores its
+     * result under [key] with an expiry of [expireAfter] from now, and returns it.
+     *
+     * [compute] runs without holding any lock, so it may block (for example on a network call)
+     * and may call back into this store. If several threads miss the same key at once, each
+     * runs [compute]; the first result to be stored is kept and returned to all of them.
+     */
+    fun <T : Any> getOrPut(key: String, expireAfter: Duration, clazz: KClass<T>, compute: () -> T): T {
+        get(key, clazz)?.let { return it }
+        val computed = compute()
+        val entry = Entry(computed, common.expiresAt(expireAfter))
+        while (true) {
+            val existing = store.putIfAbsent(key, entry)
+            if (existing == null) {
+                purgeIfDue()
+                return computed
+            }
+            if (!existing.hasExpired()) {
+                return common.cast(key, existing.value, clazz)
+            }
+            if (store.replace(key, existing, entry)) {
+                purgeIfDue()
+                return computed
+            }
+        }
+    }
+
+    /**
+     * Returns the live value stored under [key]. If there is none, runs [compute], stores its
+     * result under [key] with an expiry of [expireAfter] from now, and returns it.
+     */
+    inline fun <reified T : Any> getOrPut(key: String, expireAfter: Duration, noinline compute: () -> T): T =
+        getOrPut(key, expireAfter, T::class, compute)
+
     /** Removes [key]. Returns `true` if a live (unexpired) value was stored under it. */
     fun remove(key: String): Boolean {
         val removed = store.remove(key) ?: return false
