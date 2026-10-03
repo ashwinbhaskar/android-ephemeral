@@ -22,8 +22,15 @@ fun Context.putEphemeralBoolean(key: String, value: Boolean, expireAfter: Durati
 fun Context.getEphemeralBoolean(key: String, default: Boolean): Boolean =
     Preferences.getBoolean(key, default, this)
 
-fun Context.putEphemeraFloat(key: String, value: Float, expireAfter: Duration) =
+fun Context.putEphemeralFloat(key: String, value: Float, expireAfter: Duration) =
     Preferences.putFloat(key, value, expireAfter, this)
+
+@Deprecated(
+    message = "Misspelled; use putEphemeralFloat",
+    replaceWith = ReplaceWith("putEphemeralFloat(key, value, expireAfter)")
+)
+fun Context.putEphemeraFloat(key: String, value: Float, expireAfter: Duration) =
+    putEphemeralFloat(key, value, expireAfter)
 
 fun Context.getEphemeralFloat(key: String, default: Float): Float =
     Preferences.getFloat(key, default, this)
