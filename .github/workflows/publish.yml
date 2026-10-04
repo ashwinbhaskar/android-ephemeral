@@ -52,16 +52,25 @@ jobs:
           fi
           echo "Publishing version $version"
 
-      - name: Set up JDK 11
+      # The current Android command-line tools (sdkmanager) require JDK 17, but this project's
+      # Gradle 7.0.2 and Android Gradle Plugin 7.0.4 cannot run on JDK 17. So the SDK is set up
+      # under JDK 17, and JDK 11 is installed afterwards to become the JAVA_HOME the build uses.
+      - name: Set up JDK 17 for the Android SDK tools
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '11'
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: platforms;android-32 build-tools;30.0.2 platform-tools
+
+      - name: Set up JDK 11 for the build
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
 
       # The Gradle wrapper script is not committed, so install the version the wrapper
       # properties name instead of relying on the runner's preinstalled Gradle.
