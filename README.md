@@ -84,6 +84,22 @@ Preferences.purgeExpired(context)
 
 Values are kept in a private preferences file of their own, and expiries in a second one, so the library never collides with your own preference keys.
 
+## Releasing
+
+A release is published to Maven Central by GitHub Actions when a version tag is pushed. The workflow lives in `.github/workflows/publish.yml`.
+
+1. Set `PUBLISH_VERSION` in `app/ephemeral/build.gradle` to the new version and merge to `master`.
+2. Tag that commit and push the tag:
+   ```
+   git tag v2.0.0
+   git push origin v2.0.0
+   ```
+3. Watch the "Publish to Maven Central" workflow. It refuses to publish if the tag is not on `master` or does not match `PUBLISH_VERSION`, runs the unit tests, then signs, uploads and releases the artifact. It appears on Maven Central within about half an hour.
+
+The workflow reads these repository secrets: `OSSRH_USERNAME` and `OSSRH_PASSWORD` (a Central Portal user token, not OSSRH credentials), `SIGNING_KEY_ID`, `SIGNING_PASSWORD` and `SIGNING_KEY` (the ASCII-armoured GPG secret key, from `gpg --armor --export-secret-keys <key id>`).
+
+To publish from a machine instead, put the same values in `local.properties` as `ossrhUsername`, `ossrhPassword`, `signing.keyId`, `signing.password` and `signing.secretKeyRingFile`, then run `gradle publishToSonatype closeAndReleaseSonatypeStagingRepository`.
+
 ## Migrating from 1.x
 
 Version 2 removes the Arrow dependency and changes the `InMemory` API:

@@ -73,5 +73,16 @@ ext["signing.password"] = rootProject.ext["signing.password"]
 ext["signing.secretKeyRingFile"] = rootProject.ext["signing.secretKeyRingFile"]
 
 signing {
+    // On CI the secret key arrives as an ASCII-armoured string in SIGNING_KEY rather than as a
+    // key ring file on disk. Locally, with no SIGNING_KEY, the key ring file configured through
+    // the signing.* properties above is used as before.
+    String inMemoryKey = rootProject.ext["signing.key"]
+    if (inMemoryKey) {
+        useInMemoryPgpKeys(
+                rootProject.ext["signing.keyId"] ?: null,
+                inMemoryKey,
+                rootProject.ext["signing.password"]
+        )
+    }
     sign publishing.publications
 }
